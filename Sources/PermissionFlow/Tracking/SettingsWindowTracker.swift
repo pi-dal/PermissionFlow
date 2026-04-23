@@ -363,4 +363,7 @@ final class SettingsWindowTracker {
         onTrackingEnded?()
     }
 }
+
+@available(macOS 13.0, *)
+extension SettingsWindowTracker: SettingsWindowTracking {}
 #endif

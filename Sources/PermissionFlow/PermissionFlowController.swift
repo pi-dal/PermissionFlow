@@ -6,6 +6,31 @@ import SwiftUI
 
 @available(macOS 13.0, *)
 @MainActor
+protocol SettingsWindowTracking: AnyObject {
+    var onFrameChange: ((CGRect) -> Void)? { get set }
+    var onTrackingEnded: (() -> Void)? { get set }
+    var currentFrame: CGRect? { get }
+
+    func startTracking(promptIfNeeded: Bool)
+    func stopTracking()
+}
+
+@available(macOS 13.0, *)
+@MainActor
+protocol FloatingDropPaneling: AnyObject {
+    func updateLocaleIdentifier(_ localeIdentifier: String?)
+    func center()
+    func show()
+    func show(at sourceFrameInScreen: CGRect)
+    func present(from sourceFrameInScreen: CGRect, to settingsFrame: CGRect)
+    func snap(to settingsFrame: CGRect)
+    func setDraggingPassthrough(_ isDragging: Bool)
+    func bringToFront()
+    func close()
+}
+
+@available(macOS 13.0, *)
+@MainActor
 public final class PermissionFlowController: ObservableObject {
     /// The package exposes a single active floating panel at a time so opening
     /// a second permission flow closes the previous panel automatically.
@@ -30,15 +55,36 @@ public final class PermissionFlowController: ObservableObject {
     public var onDrop: ((URL) -> Void)?
 
     private let configuration: PermissionFlowConfiguration
-    private let tracker = SettingsWindowTracker()
+    private let tracker: SettingsWindowTracking
+    private let panelFactory: @MainActor (PermissionFlowController) -> FloatingDropPaneling
 
-    private var panel: FloatingDropPanel?
+    private var panel: FloatingDropPaneling?
     private var pendingLaunchSourceFrame: CGRect?
     private var previousFrontmostApplicationPID: pid_t?
     private var previousFrontmostApplicationBundleIdentifier: String?
     private var cancellables = Set<AnyCancellable>()
 
     public init(configuration: PermissionFlowConfiguration = .init()) {
+        self.tracker = SettingsWindowTracker()
+        self.panelFactory = { controller in
+            FloatingDropPanel(controller: controller)
+        }
+        self.configuration = configuration
+        self.droppedApps = configuration.requiredAppURLs.uniqueAppURLs()
+        self.localeIdentifier = configuration.localeIdentifier
+
+        updateFrontmostAppState()
+        bindTrackerCallbacks()
+        observeFrontmostApplication()
+    }
+
+    init(
+        configuration: PermissionFlowConfiguration = .init(),
+        tracker: SettingsWindowTracking,
+        panelFactory: @escaping @MainActor (PermissionFlowController) -> FloatingDropPaneling
+    ) {
+        self.tracker = tracker
+        self.panelFactory = panelFactory
         self.configuration = configuration
         self.droppedApps = configuration.requiredAppURLs.uniqueAppURLs()
         self.localeIdentifier = configuration.localeIdentifier
@@ -75,15 +121,15 @@ public final class PermissionFlowController: ObservableObject {
         SystemSettings.open(url: pane.settingsURL)
 
         Self.activeController = self
-        showPanel()
         tracker.startTracking(promptIfNeeded: configuration.promptForAccessibilityTrust)
+        showPanel()
     }
 
     /// Shows the panel immediately. If the target System Settings frame is
     /// already known, the panel is positioned or animated into place at once.
     public func showPanel() {
         if panel == nil {
-            panel = FloatingDropPanel(controller: self)
+            panel = panelFactory(self)
         }
 
         guard let panel else { return }
@@ -157,13 +203,13 @@ public final class PermissionFlowController: ObservableObject {
     /// clicked or momentarily considered for focus.
     func keepSettingsVisible() {
         SystemSettings.activate()
-        panel?.orderFrontRegardless()
+        panel?.bringToFront()
     }
 
     func reopenCurrentSettingsPane() {
         guard let currentPane else { return }
         SystemSettings.open(url: currentPane.settingsURL)
-        panel?.orderFrontRegardless()
+        panel?.bringToFront()
     }
 
     /// Merges unique app bundle URLs into the current panel list.
@@ -228,7 +274,7 @@ public final class PermissionFlowController: ObservableObject {
             .activate(options: [.activateIgnoringOtherApps])
     }
 
-    private func presentPanel(_ panel: FloatingDropPanel?, for settingsFrame: CGRect) {
+    private func presentPanel(_ panel: FloatingDropPaneling?, for settingsFrame: CGRect) {
         guard let panel else { return }
 
         if let sourceFrame = pendingLaunchSourceFrame {

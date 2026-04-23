@@ -321,4 +321,11 @@ final class FloatingDropPanel: NSPanel {
         return AnyView(view.environment(\.locale, .init(identifier: localeIdentifier)))
     }
 }
+
+@available(macOS 13.0, *)
+extension FloatingDropPanel: FloatingDropPaneling {
+    func bringToFront() {
+        orderFrontRegardless()
+    }
+}
 #endif
