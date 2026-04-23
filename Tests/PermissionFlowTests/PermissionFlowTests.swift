@@ -40,10 +40,13 @@ func authorizeUsesTrackedSettingsFrameBeforeShowingPanel() {
     let tracker = TestSettingsWindowTracker()
     tracker.frameToPublishDuringStart = settingsFrame
     let panel = TestFloatingDropPanel()
+    let provider = TestPermissionStatusProvider(state: .notGranted)
     let controller = PermissionFlowController(
         configuration: .init(),
         tracker: tracker,
-        panelFactory: { _ in panel }
+        panelFactory: { _ in panel },
+        statusProvider: { _ in provider },
+        authorizationPoller: TestPermissionAuthorizationPoller()
     )
 
     controller.authorize(
@@ -54,6 +57,38 @@ func authorizeUsesTrackedSettingsFrameBeforeShowingPanel() {
 
     #expect(tracker.startTrackingCalls == [false])
     #expect(panel.events == [.present(from: sourceFrame, to: settingsFrame)])
+}
+
+@Test
+@MainActor
+func authorizationGrantClosesActivePanel() {
+    let settingsFrame = CGRect(x: 640, y: 280, width: 720, height: 840)
+    let tracker = TestSettingsWindowTracker()
+    tracker.frameToPublishDuringStart = settingsFrame
+    let panel = TestFloatingDropPanel()
+    let provider = TestPermissionStatusProvider(state: .notGranted)
+    let poller = TestPermissionAuthorizationPoller()
+    let controller = PermissionFlowController(
+        configuration: .init(),
+        tracker: tracker,
+        panelFactory: { _ in panel },
+        statusProvider: { _ in provider },
+        authorizationPoller: poller
+    )
+
+    controller.authorize(
+        pane: .accessibility,
+        suggestedAppURLs: [URL(fileURLWithPath: "/Applications/Test.app")]
+    )
+
+    #expect(poller.startIntervals == [0.5])
+    #expect(panel.events == [.snap(settingsFrame)])
+
+    provider.state = .granted
+    poller.fire()
+
+    #expect(panel.events == [.snap(settingsFrame), .close])
+    #expect(tracker.stopTrackingCalls == 1)
 }
 
 @Test
@@ -96,6 +131,7 @@ private final class TestSettingsWindowTracker: SettingsWindowTracking {
     var currentFrame: CGRect?
     var frameToPublishDuringStart: CGRect?
     var startTrackingCalls: [Bool] = []
+    var stopTrackingCalls = 0
 
     func startTracking(promptIfNeeded: Bool) {
         startTrackingCalls.append(promptIfNeeded)
@@ -105,7 +141,40 @@ private final class TestSettingsWindowTracker: SettingsWindowTracking {
     }
 
     func stopTracking() {
+        stopTrackingCalls += 1
         currentFrame = nil
+    }
+}
+
+private final class TestPermissionStatusProvider: PermissionStatusProviding, @unchecked Sendable {
+    var state: PermissionAuthorizationState
+    var capability: PermissionStatusCapability { .preflightSupported }
+
+    init(state: PermissionAuthorizationState) {
+        self.state = state
+    }
+
+    func authorizationState() -> PermissionAuthorizationState {
+        state
+    }
+}
+
+@MainActor
+private final class TestPermissionAuthorizationPoller: PermissionAuthorizationPolling {
+    var startIntervals: [TimeInterval] = []
+    private var handler: (@MainActor () -> Void)?
+
+    func startPolling(every interval: TimeInterval, _ handler: @escaping @MainActor () -> Void) {
+        startIntervals.append(interval)
+        self.handler = handler
+    }
+
+    func stopPolling() {
+        handler = nil
+    }
+
+    func fire() {
+        handler?()
     }
 }
 

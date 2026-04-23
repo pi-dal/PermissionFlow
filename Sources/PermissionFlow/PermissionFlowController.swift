@@ -31,6 +31,36 @@ protocol FloatingDropPaneling: AnyObject {
 
 @available(macOS 13.0, *)
 @MainActor
+protocol PermissionAuthorizationPolling: AnyObject {
+    func startPolling(every interval: TimeInterval, _ handler: @escaping @MainActor () -> Void)
+    func stopPolling()
+}
+
+@available(macOS 13.0, *)
+@MainActor
+private final class TimerPermissionAuthorizationPoller: PermissionAuthorizationPolling {
+    private var timer: Timer?
+
+    func startPolling(every interval: TimeInterval, _ handler: @escaping @MainActor () -> Void) {
+        stopPolling()
+        let timer = Timer(timeInterval: interval, repeats: true) { _ in
+            Task { @MainActor in
+                handler()
+            }
+        }
+        timer.tolerance = interval * 0.2
+        RunLoop.main.add(timer, forMode: .common)
+        self.timer = timer
+    }
+
+    func stopPolling() {
+        timer?.invalidate()
+        timer = nil
+    }
+}
+
+@available(macOS 13.0, *)
+@MainActor
 public final class PermissionFlowController: ObservableObject {
     /// The package exposes a single active floating panel at a time so opening
     /// a second permission flow closes the previous panel automatically.
@@ -57,6 +87,9 @@ public final class PermissionFlowController: ObservableObject {
     private let configuration: PermissionFlowConfiguration
     private let tracker: SettingsWindowTracking
     private let panelFactory: @MainActor (PermissionFlowController) -> FloatingDropPaneling
+    private let statusProvider: @MainActor (PermissionFlowPane) -> any PermissionStatusProviding
+    private let authorizationPoller: PermissionAuthorizationPolling
+    private let authorizationPollInterval: TimeInterval
 
     private var panel: FloatingDropPaneling?
     private var pendingLaunchSourceFrame: CGRect?
@@ -69,6 +102,11 @@ public final class PermissionFlowController: ObservableObject {
         self.panelFactory = { controller in
             FloatingDropPanel(controller: controller)
         }
+        self.statusProvider = { pane in
+            PermissionStatusRegistry.provider(for: pane)
+        }
+        self.authorizationPoller = TimerPermissionAuthorizationPoller()
+        self.authorizationPollInterval = 0.5
         self.configuration = configuration
         self.droppedApps = configuration.requiredAppURLs.uniqueAppURLs()
         self.localeIdentifier = configuration.localeIdentifier
@@ -81,10 +119,18 @@ public final class PermissionFlowController: ObservableObject {
     init(
         configuration: PermissionFlowConfiguration = .init(),
         tracker: SettingsWindowTracking,
-        panelFactory: @escaping @MainActor (PermissionFlowController) -> FloatingDropPaneling
+        panelFactory: @escaping @MainActor (PermissionFlowController) -> FloatingDropPaneling,
+        statusProvider: @escaping @MainActor (PermissionFlowPane) -> any PermissionStatusProviding = { pane in
+            PermissionStatusRegistry.provider(for: pane)
+        },
+        authorizationPoller: PermissionAuthorizationPolling = TimerPermissionAuthorizationPoller(),
+        authorizationPollInterval: TimeInterval = 0.5
     ) {
         self.tracker = tracker
         self.panelFactory = panelFactory
+        self.statusProvider = statusProvider
+        self.authorizationPoller = authorizationPoller
+        self.authorizationPollInterval = authorizationPollInterval
         self.configuration = configuration
         self.droppedApps = configuration.requiredAppURLs.uniqueAppURLs()
         self.localeIdentifier = configuration.localeIdentifier
@@ -123,6 +169,7 @@ public final class PermissionFlowController: ObservableObject {
         Self.activeController = self
         tracker.startTracking(promptIfNeeded: configuration.promptForAccessibilityTrust)
         showPanel()
+        startAuthorizationStatusPolling(for: pane)
     }
 
     /// Shows the panel immediately. If the target System Settings frame is
@@ -148,6 +195,7 @@ public final class PermissionFlowController: ObservableObject {
     }
 
     public func closePanel(returnToPreviousApp: Bool = false) {
+        authorizationPoller.stopPolling()
         tracker.stopTracking()
         panel?.close()
         panel = nil
@@ -282,6 +330,35 @@ public final class PermissionFlowController: ObservableObject {
             pendingLaunchSourceFrame = nil
         } else {
             panel.snap(to: settingsFrame)
+        }
+    }
+
+    private func startAuthorizationStatusPolling(for pane: PermissionFlowPane) {
+        authorizationPoller.stopPolling()
+
+        let provider = statusProvider(pane)
+        guard provider.capability == .preflightSupported else { return }
+
+        authorizationPoller.startPolling(every: authorizationPollInterval) { [weak self] in
+            self?.refreshGuidedAuthorizationState()
+        }
+        refreshGuidedAuthorizationState()
+    }
+
+    private func refreshGuidedAuthorizationState() {
+        guard let currentPane else {
+            authorizationPoller.stopPolling()
+            return
+        }
+
+        let provider = statusProvider(currentPane)
+        guard provider.capability == .preflightSupported else {
+            authorizationPoller.stopPolling()
+            return
+        }
+
+        if provider.authorizationState() == .granted {
+            closePanel()
         }
     }
 
