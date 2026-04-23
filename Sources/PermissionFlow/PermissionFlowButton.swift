@@ -36,7 +36,11 @@ public struct PermissionFlowButton: View {
             )
         } label: {
             Label {
-                Text(title ?? LocalizedStringResource(String.LocalizationValue(buttonState.titleKey), locale: locale, bundle: .module))
+                if let title {
+                    Text(title)
+                } else {
+                    Text(localizedButtonTitle)
+                }
             } icon: {
                 Image(systemName: buttonState.systemImage)
                     .foregroundColor(buttonState.isGranted ? .green : .primary)
@@ -59,6 +63,27 @@ public struct PermissionFlowButton: View {
         let provider = PermissionStatusRegistry.provider(for: pane)
         let authState = provider.authorizationState()
         buttonState = PermissionFlowButtonState.make(from: authState)
+    }
+
+    private var localizedButtonTitle: String {
+        Bundle.module.localizedString(
+            forKey: buttonState.titleKey,
+            value: fallbackButtonTitle,
+            table: nil
+        )
+    }
+
+    private var fallbackButtonTitle: String {
+        switch buttonState.titleKey {
+        case "permission_flow.button.granted":
+            return "Granted"
+        case "permission_flow.button.grant":
+            return "Grant"
+        case "permission_flow.button.checking":
+            return "Checking..."
+        default:
+            return "Open"
+        }
     }
 }
 #endif
