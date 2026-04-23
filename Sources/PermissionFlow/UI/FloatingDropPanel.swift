@@ -51,8 +51,16 @@ final class FloatingDropPanel: NSPanel {
         hidesOnDeactivate = false
         animationBehavior = .utilityWindow
 
+        let contentContainer = NSView(frame: CGRect(origin: .zero, size: CGSize(width: initialPanelWidth, height: minimumPanelHeight)))
         hostingView.translatesAutoresizingMaskIntoConstraints = false
-        contentView = hostingView
+        contentContainer.addSubview(hostingView)
+        NSLayoutConstraint.activate([
+            hostingView.leadingAnchor.constraint(equalTo: contentContainer.leadingAnchor),
+            hostingView.trailingAnchor.constraint(equalTo: contentContainer.trailingAnchor),
+            hostingView.topAnchor.constraint(equalTo: contentContainer.topAnchor),
+            hostingView.bottomAnchor.constraint(equalTo: contentContainer.bottomAnchor)
+        ])
+        contentView = contentContainer
         setContentSize(CGSize(width: initialPanelWidth, height: measuredPanelHeight(for: initialPanelWidth)))
     }
 
