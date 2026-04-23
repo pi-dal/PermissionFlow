@@ -45,12 +45,13 @@ final class FloatingDropPanel: NSPanel {
             defer: false
         )
 
-        level = .floating
+        isFloatingPanel = true
+        level = .statusBar
         isReleasedWhenClosed = false
         isOpaque = false
         backgroundColor = .clear
         hasShadow = true
-        collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .ignoresCycle]
         isMovableByWindowBackground = false
         hidesOnDeactivate = false
         animationBehavior = .utilityWindow
