@@ -84,6 +84,11 @@ func floatingPanelTargetFrameCapsRunawayMeasuredHeight() {
     #expect(frame.height <= 220)
 }
 
+@Test
+func floatingPanelMeasuredHeightIsCappedBeforePositioning() {
+    #expect(FloatingDropPanelFrameResolver.clampedPanelHeight(4096) <= 220)
+}
+
 @MainActor
 private final class TestSettingsWindowTracker: SettingsWindowTracking {
     var onFrameChange: ((CGRect) -> Void)?

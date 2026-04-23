@@ -215,7 +215,7 @@ final class FloatingDropPanel: NSPanel {
     private func measuredPanelHeight(for width: CGFloat) -> CGFloat {
         sizingView.setFrameSize(NSSize(width: width, height: sizingHeightLimit))
         sizingView.layoutSubtreeIfNeeded()
-        return max(minimumPanelHeight, sizingView.fittingSize.height)
+        return FloatingDropPanelFrameResolver.clampedPanelHeight(sizingView.fittingSize.height)
     }
 
     /// Advances the current launch animation frame-by-frame until the panel
@@ -317,7 +317,7 @@ struct FloatingDropPanelFrameResolver {
     ) -> CGRect {
         let width = targetWidth(for: settingsFrame, screenFrame: screenFrame)
         let availableHeight = min(maximumHeight, max(minimumHeight, settingsFrame.height - (inset * 2)))
-        let height = min(max(minimumHeight, measuredPanelHeight), availableHeight)
+        let height = min(clampedPanelHeight(measuredPanelHeight), availableHeight)
 
         let minX = max(settingsFrame.minX + sidebarWidth, screenFrame.minX + inset)
         let maxX = min(settingsFrame.maxX - inset, screenFrame.maxX - inset) - width
@@ -328,6 +328,10 @@ struct FloatingDropPanelFrameResolver {
         let y = max(minY, min(minY, maxY))
 
         return CGRect(x: x, y: y, width: width, height: height)
+    }
+
+    static func clampedPanelHeight(_ measuredHeight: CGFloat) -> CGFloat {
+        min(max(minimumHeight, measuredHeight), maximumHeight)
     }
 }
 
