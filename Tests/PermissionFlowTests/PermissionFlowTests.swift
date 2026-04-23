@@ -70,6 +70,20 @@ func floatingPanelTargetFrameStaysInsideSettingsWindow() {
     #expect(settingsFrame.contains(frame))
 }
 
+@Test
+func floatingPanelTargetFrameCapsRunawayMeasuredHeight() {
+    let settingsFrame = CGRect(x: 120, y: 180, width: 920, height: 680)
+    let screenFrame = CGRect(x: 0, y: 0, width: 1440, height: 900)
+
+    let frame = FloatingDropPanelFrameResolver.targetFrame(
+        for: settingsFrame,
+        measuredPanelHeight: 4096,
+        screenFrame: screenFrame
+    )
+
+    #expect(frame.height <= 220)
+}
+
 @MainActor
 private final class TestSettingsWindowTracker: SettingsWindowTracking {
     var onFrameChange: ((CGRect) -> Void)?

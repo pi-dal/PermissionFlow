@@ -300,6 +300,7 @@ struct FloatingDropPanelFrameResolver {
     private static let inset: CGFloat = 12
     private static let minimumWidth: CGFloat = 240
     private static let minimumHeight: CGFloat = 96
+    private static let maximumHeight: CGFloat = 220
 
     static func targetWidth(for settingsFrame: CGRect, screenFrame: CGRect) -> CGFloat {
         let availableContentWidth = max(
@@ -315,7 +316,7 @@ struct FloatingDropPanelFrameResolver {
         screenFrame: CGRect
     ) -> CGRect {
         let width = targetWidth(for: settingsFrame, screenFrame: screenFrame)
-        let availableHeight = max(minimumHeight, settingsFrame.height - (inset * 2))
+        let availableHeight = min(maximumHeight, max(minimumHeight, settingsFrame.height - (inset * 2)))
         let height = min(max(minimumHeight, measuredPanelHeight), availableHeight)
 
         let minX = max(settingsFrame.minX + sidebarWidth, screenFrame.minX + inset)
