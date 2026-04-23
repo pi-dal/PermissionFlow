@@ -56,6 +56,20 @@ func authorizeUsesTrackedSettingsFrameBeforeShowingPanel() {
     #expect(panel.events == [.present(from: sourceFrame, to: settingsFrame)])
 }
 
+@Test
+func floatingPanelTargetFrameStaysInsideSettingsWindow() {
+    let settingsFrame = CGRect(x: 120, y: 180, width: 920, height: 680)
+    let screenFrame = CGRect(x: 0, y: 0, width: 1440, height: 900)
+
+    let frame = FloatingDropPanelFrameResolver.targetFrame(
+        for: settingsFrame,
+        measuredPanelHeight: 124,
+        screenFrame: screenFrame
+    )
+
+    #expect(settingsFrame.contains(frame))
+}
+
 @MainActor
 private final class TestSettingsWindowTracker: SettingsWindowTracking {
     var onFrameChange: ((CGRect) -> Void)?

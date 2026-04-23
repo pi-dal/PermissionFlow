@@ -11,11 +11,6 @@ final class FloatingDropPanel: NSPanel {
     private let sizingView: NSHostingView<AnyView>
     private let initialPanelWidth: CGFloat = 420
 
-    /// System Settings has a leading sidebar. Matching the trailing content
-    /// area width keeps the floating panel visually aligned with the pane that
-    /// the user is actively interacting with.
-    private let sidebarWidth: CGFloat = 230
-    private let screenInset: CGFloat = 12
     private let minimumPanelHeight: CGFloat = 96
     private let sizingHeightLimit: CGFloat = 4096
 
@@ -186,42 +181,17 @@ final class FloatingDropPanel: NSPanel {
             .first(where: { $0.frame.intersects(settingsFrame) })?
             .visibleFrame ?? settingsFrame
 
-        // The helper panel is anchored to the trailing content area of System
-        // Settings rather than the full window width because the leading
-        // sidebar is not the user's active target.
-        let contentMinX = settingsFrame.minX + sidebarWidth
-        let availableContentWidth = max(240, settingsFrame.width - sidebarWidth)
-        let width = min(availableContentWidth, screenFrame.width - (screenInset * 2))
-        let height = measuredPanelHeight(for: width)
-
-        // This is the place to tune visual attachment if the panel feels too
-        // far from the bottom edge of System Settings.
-        //
-        // Current behavior:
-        //   y = settingsFrame.minY - height
-        // means "place the panel immediately below the tracked window frame".
-        //
-        // If the tracked frame still includes some visual framing/shadow, the
-        // panel will look separated by that amount. A manual tweak such as:
-        //
-        //   y = settingsFrame.minY - height + 28
-        //
-        // is effectively saying "treat the bottom 28pt as non-visual spacing
-        // and pull the panel upward".
-        //
-        // This is usually a better place for that adjustment than
-        // SettingsWindowTracker.appKitScreenFrame(...), because the intent here
-        // is clearly visual alignment of the floating panel, not coordinate
-        // conversion of the tracked window.
-        var origin = CGPoint(
-            x: contentMinX,
-            y: settingsFrame.minY - height
+        let initialWidth = FloatingDropPanelFrameResolver.targetWidth(
+            for: settingsFrame,
+            screenFrame: screenFrame
         )
+        let height = measuredPanelHeight(for: initialWidth)
 
-        origin.x = max(screenFrame.minX + screenInset, min(origin.x, screenFrame.maxX - width - screenInset))
-        origin.y = max(screenFrame.minY + screenInset, min(origin.y, screenFrame.maxY - height - screenInset))
-
-        return CGRect(origin: origin, size: CGSize(width: width, height: height))
+        return FloatingDropPanelFrameResolver.targetFrame(
+            for: settingsFrame,
+            measuredPanelHeight: height,
+            screenFrame: screenFrame
+        )
     }
 
     /// Builds the starting frame for the launch animation around the source UI
@@ -319,6 +289,44 @@ final class FloatingDropPanel: NSPanel {
         let view = PermissionFlowPanelView(controller: controller)
         guard let localeIdentifier else { return AnyView(view) }
         return AnyView(view.environment(\.locale, .init(identifier: localeIdentifier)))
+    }
+}
+
+@available(macOS 13.0, *)
+struct FloatingDropPanelFrameResolver {
+    /// System Settings has a leading sidebar. The helper belongs in the
+    /// trailing content area, but still inside the tracked Settings window.
+    private static let sidebarWidth: CGFloat = 230
+    private static let inset: CGFloat = 12
+    private static let minimumWidth: CGFloat = 240
+    private static let minimumHeight: CGFloat = 96
+
+    static func targetWidth(for settingsFrame: CGRect, screenFrame: CGRect) -> CGFloat {
+        let availableContentWidth = max(
+            minimumWidth,
+            settingsFrame.width - sidebarWidth - inset
+        )
+        return min(availableContentWidth, screenFrame.width - (inset * 2))
+    }
+
+    static func targetFrame(
+        for settingsFrame: CGRect,
+        measuredPanelHeight: CGFloat,
+        screenFrame: CGRect
+    ) -> CGRect {
+        let width = targetWidth(for: settingsFrame, screenFrame: screenFrame)
+        let availableHeight = max(minimumHeight, settingsFrame.height - (inset * 2))
+        let height = min(max(minimumHeight, measuredPanelHeight), availableHeight)
+
+        let minX = max(settingsFrame.minX + sidebarWidth, screenFrame.minX + inset)
+        let maxX = min(settingsFrame.maxX - inset, screenFrame.maxX - inset) - width
+        let x = max(minX, min(minX, maxX))
+
+        let minY = max(settingsFrame.minY + inset, screenFrame.minY + inset)
+        let maxY = min(settingsFrame.maxY - inset, screenFrame.maxY - inset) - height
+        let y = max(minY, min(minY, maxY))
+
+        return CGRect(x: x, y: y, width: width, height: height)
     }
 }
 
